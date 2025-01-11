@@ -151,8 +151,6 @@ def planlama_endpoint(girdi: PlanlamaGirdisi):
         raise HTTPException(status_code=500, detail=str(e))
 """
 
-#Backende göre düzenlenmiş hali.
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any
@@ -161,7 +159,7 @@ import random
 
 app = FastAPI()
 
-# Veri modelleri (ExamSessionPostDto ve ExamRoomDto'ya benzer)
+# Veri modelleri
 class Exam(BaseModel):
     lecture_code: str
     student_count: int
@@ -182,9 +180,9 @@ class PlanningInput(BaseModel):
     day_time: List[DayTime]
 
 def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
-    max_exams_per_day = 26
-    max_group_exam = 2
-    min_group_time_diff = 120
+    max_exams_per_day = 26  # Günlük maksimum sınav
+    max_group_exam = 2      # Bir grup için günlük maksimum sınav
+    min_group_time_diff = 120  # Grup sınavları arasındaki minimum süre (dakika)
 
     exams = sorted(input_data.exams, key=lambda x: -x.student_count)
     rooms = sorted(input_data.rooms, key=lambda x: -x.exam_capacity)
@@ -258,16 +256,17 @@ def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
                 student_count = 0
 
         placement_completed = False
+        start_day_index = day_index
         for _ in range(len(day_time)):
             day = get_next_day()
             date = day.date
-            if placement_completed:
-                break
+
             if (
                 daily_exam_count[date] >= max_exams_per_day or
                 daily_group_exams[date][exam.grade] >= max_group_exam
             ):
                 continue
+
             start, end = find_exam_slot(exam, day, date, room_usage)
 
             if start and end:
@@ -285,8 +284,10 @@ def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
                 daily_exam_count[date] += 1
                 daily_group_exams[date][exam.grade] += 1
                 placement_completed = True
+                break
 
         if not placement_completed:
+            day_index = start_day_index  # Başlangıç gününe geri dön
             unscheduled_exams.append(exam.lecture_code)
 
     return {"planning": planning, "unscheduled_exams": unscheduled_exams}
