@@ -202,17 +202,38 @@ def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
     group_exam_times = {
         day.date: {group: [] for group in group_keys} for day in day_time
     }
-
+    """
+    Amacı: Oda listesini karıştırarak her seferinde farklı bir oda sıralaması elde etmek.
+    İşleyişi:
+    random.sample fonksiyonu, verilen listeyi rastgele bir şekilde yeniden sıralar ve yeni bir liste döndürür.
+    Böylece her sınav için odaların sıralaması değişir ve sınavların farklı odalarda yapılma olasılığı artar.
+    """
     def shuffle_rooms(rooms):
         return random.sample(rooms, len(rooms))
 
+    """
+    Amacı: Aynı sınıf seviyesinden sınavların arasında belirli bir minimum süre farkı olup olmadığını kontrol etmek.
+    İşleyişi:
+    Belirli bir tarih ve sınıf seviyesi için daha önce planlanan sınavların başlangıç saatlerini kontrol eder.
+    Yeni sınavın başlangıç saati ile mevcut sınavların başlangıç saatleri arasındaki süre farkını hesaplar.
+    Eğer bu fark min_group_time_diff değerinden küçükse, False döner (sınav bu zaman dilimine yerleştirilemez).
+    Aksi takdirde, True döner (sınav bu zaman dilimine yerleştirilebilir).
+    """
     def group_time_check(date, grade, start_time):
         for group_start in group_exam_times[date][grade]:
             diff = abs((start_time - group_start).total_seconds() / 60)
             if diff < min_group_time_diff:
                 return False
         return True
-
+    """
+    Amacı: Verilen sınav için uygun bir başlangıç ve bitiş saati bulmak.
+    İşleyişi:
+    Gün içindeki her başlangıç saati için sınavın başlangıç ve bitiş saatlerini hesaplar.
+    Grup Zaman Kontrolü: group_time_check fonksiyonunu çağırarak aynı sınıf seviyesinden diğer sınavlarla zaman farkını kontrol eder.
+    Oda Uygunluğu Kontrolü: Her oda için belirtilen zaman aralığında başka bir sınav olup olmadığını kontrol eder.
+    Eğer tüm odalar uygun ise, sınav için başlangıç ve bitiş saatlerini döndürür.
+    Uygun bir zaman bulunamazsa, (None, None) döner.
+    """
     def find_exam_slot(exam, day, date, room_usage):
         for start in day.start_times:
             start_time = datetime.strptime(start, "%H:%M")
@@ -237,16 +258,38 @@ def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
         return None, None
 
     day_index = 0
-
+    """
+    Amacı: Sıradaki günü döndürmek ve day_index değerini güncellemek.
+    İşleyişi:
+    day_index değişkenini bir artırır ve mod işlemiyle gün sayısını aşmayacak şekilde sıfırlanmasını sağlar.
+    Böylece günlerin döngüsel olarak sırasıyla kontrol edilmesini sağlar.
+    Mevcut günün bilgisini döndürür.
+    """
     def get_next_day():
         nonlocal day_index
         day_index = (day_index + 1) % len(day_time)
         return day_time[day_index]
 
+    """
+    Bu kod bölümü, sınavların odalara ve zaman dilimlerine yerleştirilmesini sağlayan ana döngüyü içerir.
+    """
+
+
+    """
+    Sınavlar, öğrenci sayısına göre sıralı olarak ele alınır (exams listesi daha önce öğrenci sayısına göre azalan şekilde sıralandı).
+    student_count: Mevcut sınavın öğrenci sayısını tutar.
+    room_usage: Bu sınav için kullanılacak odaların isimlerini tutacak bir liste.
+    """
     for exam in exams:
         student_count = exam.student_count
         room_usage = []
-
+        """
+        Amaç: Sınav için yeterli kapasiteye sahip odaları belirlemek.
+        shuffle_rooms(rooms) ile odaların sırası rastgele karıştırılır.
+        Odalar sınavın öğrenci sayısına göre yerleştirilir:
+        Eğer oda kapasitesi sınavın öğrenci sayısına eşit veya küçükse, oda sınav için kullanılır ve öğrenci sayısından bu kapasite düşülür.
+        Eğer kalan öğrenci sayısı bir odanın kapasitesine eşit veya daha azsa, o oda da kullanılır ve öğrenci sayısı sıfırlanır.
+        """
         for room in shuffle_rooms(rooms):
             if student_count <= 0:
                 break
@@ -256,7 +299,15 @@ def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
             elif student_count <= room.exam_capacity:
                 room_usage.append(room.room_name)
                 student_count = 0
-
+        """
+        Amaç: Sınav için uygun bir gün ve zaman dilimi bulmak.
+        placement_completed sınavın yerleşiminin tamamlanıp tamamlanmadığını takip eder.
+        get_next_day() ile sıradaki gün seçilir.
+        Günlük sınav ve grup sınavı sınırları kontrol edilir:
+        daily_exam_count[date]: O gün için maksimum sınav sayısı.
+        daily_group_exams[date][exam.grade]: O gün için aynı sınıf seviyesinden maksimum sınav sayısı.
+        Eğer günlük sınav veya grup sınavı sınırları aşılmışsa, bir sonraki güne geçilir (continue).
+        """
         placement_completed = False
         for _ in range(len(day_time)):
             day = get_next_day()
@@ -268,6 +319,18 @@ def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
                 daily_group_exams[date][exam.grade] >= max_group_exam
             ):
                 continue
+
+
+            """
+            Amaç: Uygun bir başlangıç ve bitiş saati bulmak ve sınavı yerleştirmek.
+            find_exam_slot(exam, day, date, room_usage) fonksiyonu, sınavın odalar için uygun bir zaman aralığı bulur.
+            Eğer uygun bir zaman bulunursa:
+            Sınavın bilgileri planning listesine eklenir.
+            Kullanılan odaların zaman durumu time_status'a eklenir.
+            Aynı sınıf seviyesi için sınavın zamanı group_exam_times'a eklenir.
+            Günlük sınav ve grup sınavı sayıları güncellenir.
+            placement_completed işaretlenerek sınavın yerleştirme işlemi tamamlanır.
+            """
             start, end = find_exam_slot(exam, day, date, room_usage)
 
             if start and end:
@@ -285,10 +348,17 @@ def exam_planning(input_data: PlanningInput) -> Dict[str, Any]:
                 daily_exam_count[date] += 1
                 daily_group_exams[date][exam.grade] += 1
                 placement_completed = True
-
+        """
+        Amaç: Eğer sınav bir güne veya zaman dilimine yerleştirilemezse, bu sınavı unscheduled_exams listesine eklemek.
+        Bu liste, planlanamayan sınavların kodlarını içerir.
+        """
         if not placement_completed:
             unscheduled_exams.append(exam.lecture_code)
-
+    """
+    Amaç: Planlanan sınavların ve planlanamayan sınavların listesini döndürmek.
+    planning: Başarıyla planlanan sınavların detaylarını içerir.
+    unscheduled_exams: Planlanamayan sınavların kodlarını içerir.
+    """
     return {"planning": planning, "unscheduled_exams": unscheduled_exams}
 
 @app.post("/planning")
